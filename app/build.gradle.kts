@@ -12,8 +12,8 @@ android {
         applicationId = "com.custom.froggyweather"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "1.10.0 (v11)"
+        versionCode = 12
+        versionName = "1.11.0 (v12)"
     }
 
     buildTypes {
