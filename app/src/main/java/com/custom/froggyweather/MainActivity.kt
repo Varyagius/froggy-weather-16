@@ -92,7 +92,7 @@ data class WeatherState(
     val error: String? = null
 )
 
-const val APP_VERSION_LABEL = "v7 - 1.6.0 (code 7)"
+const val APP_VERSION_LABEL = "v8 - 1.7.0 (code 8)"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
