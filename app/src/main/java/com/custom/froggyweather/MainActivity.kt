@@ -1,4 +1,4 @@
-package com.custom.froggyweather
+﻿package com.custom.froggyweather
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -91,6 +91,8 @@ data class WeatherState(
     val isLoading: Boolean = true,
     val error: String? = null
 )
+
+const val APP_VERSION_LABEL = "v4 - 1.3.0 (code 4)"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
