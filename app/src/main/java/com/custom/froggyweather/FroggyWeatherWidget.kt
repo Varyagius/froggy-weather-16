@@ -57,16 +57,23 @@ class FroggyWeatherWidget : AppWidgetProvider() {
             val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val city = p.getString("city", "Хмельницький") ?: "Хмельницький"
             val temp = p.getInt("temp", 1)
+            val code = p.getInt("code", 61)
             val ukLocale = Locale.forLanguageTag("uk")
             val timeText = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm", ukLocale))
             val dateText = LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM", ukLocale))
+            val emoji = when (code) {
+                0 -> ""
+                1, 2, 3, 45, 48 -> ""
+                in 71..77, in 85..86 -> ""
+                else -> ""
+            }
 
             val views = RemoteViews(context.packageName, R.layout.widget_froggy_weather)
             views.setTextViewText(R.id.widget_clock, timeText)
             views.setTextViewText(R.id.widget_date, dateText)
             views.setTextViewText(R.id.widget_city, city)
+            views.setTextViewText(R.id.widget_weather_icon, emoji)
             views.setTextViewText(R.id.widget_temp, "${temp}C")
-            views.setImageViewResource(R.id.widget_weather_icon, R.mipmap.ic_launcher)
 
             val pi = PendingIntent.getActivity(
                 context,
