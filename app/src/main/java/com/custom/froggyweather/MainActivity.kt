@@ -55,7 +55,11 @@ import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.roundToInt
 
+const val APP_VERSION_LABEL = "v9  1.8.0 (code 9)"
+
 data class HourlyItem(
+    val dateStr: String,
+    val hourInt: Int,
     val timeLabel: String,
     val temp: Int,
     val apparentTemp: Int,
@@ -65,10 +69,12 @@ data class HourlyItem(
     val precipMm: Double,
     val windSpeed: Int,
     val windDir: Float,
-    val humidity: Int
+    val humidity: Int,
+    val isCurrentHour: Boolean
 )
 
 data class DailyItem(
+    val dateStr: String,
     val dayName: String,
     val maxTemp: Int,
     val minTemp: Int,
@@ -92,8 +98,6 @@ data class WeatherState(
     val error: String? = null
 )
 
-const val APP_VERSION_LABEL = "v8 - 1.7.0 (code 8)"
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -113,11 +117,35 @@ fun WeatherScreen() {
 
     var state by remember { mutableStateOf(WeatherState()) }
     var selectedDayIndex by remember { mutableIntStateOf(0) }
+    var selectedHourIndex by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
     var showSearchDialog by remember { mutableStateOf(false) }
     var coords by remember { mutableStateOf(49.4229 to 26.9871) }
     var manualOverride by remember { mutableStateOf(false) }
     var autoLocationStatus by remember { mutableStateOf("Автогеолокація") }
+
+    suspend fun loadWeatherAndSyncWidget(city: String, region: String, lat: Double, lon: Double) {
+        val loaded = fetchWeather(city, region, lat, lon)
+        state = loaded
+        if (loaded.error == null) {
+            FroggyWeatherWidget.saveWeatherSnapshot(
+                context = context,
+                city = loaded.cityName,
+                temp = loaded.currentTemp,
+                weatherCode = loaded.currentCode,
+                lat = lat,
+                lon = lon
+            )
+            if (selectedDayIndex == 0) {
+                val nowIdx = loaded.hourly
+                    .filter { it.dateStr == loaded.daily.firstOrNull()?.dateStr }
+                    .indexOfFirst { it.isCurrentHour }
+                selectedHourIndex = if (nowIdx >= 0) nowIdx else 0
+            } else {
+                selectedHourIndex = 12
+            }
+        }
+    }
 
     suspend fun detectAndLoadCurrentLocation() {
         val loc = getLastKnownOrSingleLocation(context)
@@ -131,9 +159,9 @@ fun WeatherScreen() {
                 error = null
             )
             autoLocationStatus = "GPS: ${place.first}"
-            state = fetchWeather(place.first, place.second, loc.latitude, loc.longitude)
+            loadWeatherAndSyncWidget(place.first, place.second, loc.latitude, loc.longitude)
         } else {
-            state = fetchWeather(state.cityName, state.regionName, coords.first, coords.second)
+            loadWeatherAndSyncWidget(state.cityName, state.regionName, coords.first, coords.second)
         }
     }
 
@@ -146,7 +174,7 @@ fun WeatherScreen() {
             if (granted && !manualOverride) {
                 detectAndLoadCurrentLocation()
             } else {
-                state = fetchWeather(state.cityName, state.regionName, coords.first, coords.second)
+                loadWeatherAndSyncWidget(state.cityName, state.regionName, coords.first, coords.second)
             }
         }
     }
@@ -157,7 +185,7 @@ fun WeatherScreen() {
         if (hasFine || hasCoarse) {
             detectAndLoadCurrentLocation()
         } else {
-            state = fetchWeather(state.cityName, state.regionName, coords.first, coords.second)
+            loadWeatherAndSyncWidget(state.cityName, state.regionName, coords.first, coords.second)
             permissionLauncher.launch(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
@@ -167,8 +195,8 @@ fun WeatherScreen() {
         }
     }
 
-    val bgDark = Color(0xFF1A1B1E)
-    val cardDark = Color(0xFF26282C)
+    val bgDark = Color(0xFF141619)
+    val cardDark = Color(0xFF22252A)
     val accentBlue = Color(0xFF8AB4F8)
 
     Scaffold(
@@ -194,26 +222,25 @@ fun WeatherScreen() {
                         if (!manualOverride) Icons.Rounded.MyLocation else Icons.Rounded.LocationOn,
                         contentDescription = null,
                         tint = Color(0xFFA8C7FA),
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = if (state.regionName.isNotEmpty()) "${state.cityName}, ${state.regionName}" else state.cityName,
-                        color = Color(0xFFE3E3E3),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Icon(
                         Icons.Rounded.ArrowDropDown,
                         contentDescription = null,
-                        tint = Color(0xFFC4C7C5),
-                        modifier = Modifier.size(20.dp)
+                        tint = Color(0xFFD0D5DD),
+                        modifier = Modifier.size(22.dp)
                     )
                 }
 
-                // Кнопка повернення до автоматичного місцеположення
                 IconButton(onClick = {
                     scope.launch {
                         manualOverride = false
@@ -231,10 +258,10 @@ fun WeatherScreen() {
                 IconButton(onClick = {
                     scope.launch {
                         state = state.copy(isLoading = true)
-                        state = fetchWeather(state.cityName, state.regionName, coords.first, coords.second)
+                        loadWeatherAndSyncWidget(state.cityName, state.regionName, coords.first, coords.second)
                     }
                 }) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = "Оновити", tint = Color(0xFFC4C7C5))
+                    Icon(Icons.Rounded.Refresh, contentDescription = "Оновити", tint = Color(0xFFD0D5DD))
                 }
             }
         }
@@ -245,16 +272,34 @@ fun WeatherScreen() {
             }
         } else if (state.error != null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("Помилка: ${state.error}", color = Color(0xFFF28B82))
+                Text("Помилка: ${state.error}", color = Color(0xFFF28B82), fontWeight = FontWeight.Bold)
             }
         } else {
-            val dayHours = state.hourly.drop(selectedDayIndex * 24).take(8)
             val activeDay = state.daily.getOrNull(selectedDayIndex)
-            val displayTemp = if (selectedDayIndex == 0) state.currentTemp else activeDay?.maxTemp ?: 0
-            val displayFeels = if (selectedDayIndex == 0) state.feelsLike else (activeDay?.maxTemp ?: 0) - 2
-            val displayCode = if (selectedDayIndex == 0) state.currentCode else activeDay?.weatherCode ?: 0
-            val displayIsDay = if (selectedDayIndex == 0) state.isDay else true
-            val maxWindToday = if (selectedDayIndex == 0) maxOf(state.currentWind, dayHours.maxOfOrNull { it.windSpeed } ?: 0) else activeDay?.maxWind ?: 0
+            val dayHours = if (activeDay != null) {
+                state.hourly.filter { it.dateStr == activeDay.dateStr }
+            } else {
+                state.hourly.take(24)
+            }
+            val safeHourIndex = selectedHourIndex.coerceIn(0, (dayHours.size - 1).coerceAtLeast(0))
+            val selectedHour = dayHours.getOrNull(safeHourIndex)
+
+            val isNowSelected = selectedDayIndex == 0 && (selectedHour?.isCurrentHour == true)
+            val displayTemp = if (isNowSelected) state.currentTemp else (selectedHour?.temp ?: activeDay?.maxTemp ?: 0)
+            val displayFeels = if (isNowSelected) state.feelsLike else (selectedHour?.apparentTemp ?: displayTemp)
+            val displayCode = if (isNowSelected) state.currentCode else (selectedHour?.weatherCode ?: activeDay?.weatherCode ?: 0)
+            val displayIsDay = selectedHour?.isDay ?: (if (selectedDayIndex == 0) state.isDay else true)
+            val displayWind = if (isNowSelected) state.currentWind else (selectedHour?.windSpeed ?: activeDay?.maxWind ?: 0)
+            val displayPrecipProb = if (isNowSelected) state.currentPrecipProb else (selectedHour?.precipProb ?: 0)
+            val displayHumidity = if (isNowSelected) state.currentHumidity else (selectedHour?.humidity ?: 0)
+            val maxWindToday = maxOf(displayWind, dayHours.maxOfOrNull { it.windSpeed } ?: 0)
+
+            val headerTimeTitle = when {
+                isNowSelected -> "Зараз"
+                selectedDayIndex == 0 && selectedHour != null -> "Сьогодні о ${selectedHour.timeLabel}"
+                activeDay != null && selectedHour != null -> "${activeDay.dayName.uppercase()} о ${selectedHour.timeLabel}"
+                else -> "Прогноз"
+            }
 
             LazyColumn(
                 modifier = Modifier
@@ -277,17 +322,19 @@ fun WeatherScreen() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = if (selectedDayIndex == 0) "Зараз" else activeDay?.dayName?.uppercase() ?: "Прогноз",
-                                color = Color(0xFFC4C7C5),
-                                fontSize = 15.sp
+                                text = headerTimeTitle,
+                                color = Color(0xFFE4E7EC),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = if (displayIsDay) "☀️ День" else "🌙 Ніч",
-                                color = Color(0xFF9AA0A6),
-                                fontSize = 12.sp
+                                text = if (displayIsDay) " День" else " Ніч",
+                                color = Color(0xFFCBD5E1),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
-                        Spacer(Modifier.height(2.dp))
+                        Spacer(Modifier.height(4.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -295,25 +342,26 @@ fun WeatherScreen() {
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "$displayTemp°",
+                                    text = "$displayTemp",
                                     color = Color.White,
-                                    fontSize = 46.sp,
-                                    fontWeight = FontWeight.Normal
+                                    fontSize = 54.sp,
+                                    fontWeight = FontWeight.ExtraBold
                                 )
-                                Spacer(Modifier.width(8.dp))
-                                WeatherCodeIcon(displayCode, isDay = displayIsDay, size = 34)
+                                Spacer(Modifier.width(10.dp))
+                                WeatherCodeIcon(displayCode, isDay = displayIsDay, size = 38)
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(
                                     text = weatherDescription(displayCode),
                                     color = Color.White,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Medium
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Відчувається як $displayFeels°",
-                                    color = Color(0xFFC4C7C5),
-                                    fontSize = 13.sp
+                                    text = "Відчувається як $displayFeels",
+                                    color = Color(0xFFD0D5DD),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium
                                 )
                             }
                         }
@@ -332,13 +380,14 @@ fun WeatherScreen() {
                                     Icons.Rounded.Air,
                                     contentDescription = null,
                                     tint = Color(0xFFF2B8B5),
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(19.dp)
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    text = "Помірний ризик вітру · до $maxWindToday км/год",
+                                    text = "Вітряно  пориви до $maxWindToday км/год",
                                     color = Color(0xFFF3EAE8),
-                                    fontSize = 13.sp,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -347,32 +396,72 @@ fun WeatherScreen() {
 
                         Spacer(Modifier.height(14.dp))
 
+                        Text(
+                            text = "Погода за добу (натисніть годину):",
+                            color = Color(0xFF98A2B3),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.height(8.dp))
+
                         LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            itemsIndexed(dayHours) { _, h ->
+                            itemsIndexed(dayHours) { idx, h ->
+                                val isHourSelected = idx == safeHourIndex
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier.width(46.dp)
+                                    modifier = Modifier
+                                        .width(58.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(if (isHourSelected) Color(0xFF334155) else Color(0xFF1B1E23))
+                                        .border(
+                                            width = if (isHourSelected) 1.5.dp else 0.dp,
+                                            color = if (isHourSelected) Color(0xFF8AB4F8) else Color.Transparent,
+                                            shape = RoundedCornerShape(14.dp)
+                                        )
+                                        .clickable { selectedHourIndex = idx }
+                                        .padding(vertical = 8.dp, horizontal = 4.dp)
                                 ) {
-                                    Text("${h.temp}°", color = Color(0xFFE3E3E3), fontSize = 14.sp)
+                                    Text(
+                                        text = "${h.temp}",
+                                        color = Color.White,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                     Spacer(Modifier.height(6.dp))
                                     WeatherCodeIcon(h.weatherCode, isDay = h.isDay, size = 24)
                                     if (h.precipProb > 0) {
-                                        Text("${h.precipProb}%", color = accentBlue, fontSize = 11.sp)
+                                        Text(
+                                            text = "${h.precipProb}%",
+                                            color = accentBlue,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     } else {
                                         Spacer(Modifier.height(15.dp))
                                     }
                                     Spacer(Modifier.height(4.dp))
-                                    Text(h.timeLabel, color = Color(0xFFC4C7C5), fontSize = 12.sp, maxLines = 1)
+                                    Text(
+                                        text = if (h.isCurrentHour && selectedDayIndex == 0) "Зараз" else h.timeLabel,
+                                        color = if (isHourSelected) Color.White else Color(0xFFCBD5E1),
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isHourSelected) FontWeight.Bold else FontWeight.Medium,
+                                        maxLines = 1
+                                    )
                                 }
                             }
                         }
 
                         Spacer(Modifier.height(14.dp))
 
-                        FrogDynamicScene(weatherCode = displayCode, isDay = displayIsDay)
+                        FrogDynamicScene(
+                            weatherCode = displayCode,
+                            isDay = displayIsDay,
+                            temp = displayTemp,
+                            windSpeed = displayWind
+                        )
                     }
                 }
 
@@ -382,7 +471,7 @@ fun WeatherScreen() {
                             val isSelected = index == selectedDayIndex
                             Column(
                                 modifier = Modifier
-                                    .width(66.dp)
+                                    .width(74.dp)
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(if (isSelected) Color(0xFF32353B) else cardDark)
                                     .border(
@@ -390,18 +479,34 @@ fun WeatherScreen() {
                                         color = if (isSelected) Color(0xFFA8C7FA) else Color.Transparent,
                                         shape = RoundedCornerShape(16.dp)
                                     )
-                                    .clickable { selectedDayIndex = index }
+                                    .clickable {
+                                        selectedDayIndex = index
+                                        if (index == 0) {
+                                            val curIdx = state.hourly
+                                                .filter { it.dateStr == day.dateStr }
+                                                .indexOfFirst { it.isCurrentHour }
+                                            selectedHourIndex = if (curIdx >= 0) curIdx else 0
+                                        } else {
+                                            selectedHourIndex = 12
+                                        }
+                                    }
                                     .padding(vertical = 10.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text(day.dayName, color = Color(0xFFE3E3E3), fontSize = 13.sp)
+                                Text(
+                                    text = day.dayName.uppercase(),
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                                 Spacer(Modifier.height(8.dp))
-                                WeatherCodeIcon(day.weatherCode, isDay = true, size = 24)
+                                WeatherCodeIcon(day.weatherCode, isDay = true, size = 26)
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    text = "${day.maxTemp}°/${day.minTemp}°",
-                                    color = Color(0xFFC4C7C5),
-                                    fontSize = 12.sp
+                                    text = "${day.maxTemp}/${day.minTemp}",
+                                    color = Color(0xFFE4E7EC),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
                         }
@@ -409,40 +514,42 @@ fun WeatherScreen() {
                 }
 
                 item {
-                    val probVal = if (selectedDayIndex == 0) state.currentPrecipProb else (dayHours.maxOfOrNull { it.precipProb } ?: 0)
                     val totalMm = dayHours.sumOf { it.precipMm }
+                    val chartHours = dayHours.filterIndexed { i, _ -> i % 3 == 0 }.take(8)
                     ExpandableWeatherCard(
                         icon = Icons.Rounded.WaterDrop,
                         title = "Опади",
-                        summary = "$probVal%",
+                        summary = "$displayPrecipProb%",
                         cardColor = cardDark,
                         initiallyExpanded = true
                     ) {
                         Text(
-                            text = "Кількість опадів у вікні ${String.format(Locale.US, "%.1f", totalMm)} мм",
-                            color = Color(0xFFC4C7C5),
-                            fontSize = 13.sp
+                            text = "Загалом за добу: ${String.format(Locale.US, "%.1f", totalMm)} мм",
+                            color = Color(0xFFD0D5DD),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
                         )
                         Spacer(Modifier.height(12.dp))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            dayHours.take(7).forEach { h ->
+                            chartHours.forEach { h ->
                                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = if (h.precipMm == 0.0) "0,0" else String.format(Locale.US, "%.1f", h.precipMm),
-                                        color = Color(0xFFE3E3E3),
-                                        fontSize = 11.sp
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
                                     Spacer(Modifier.height(8.dp))
                                     Box(
                                         modifier = Modifier
                                             .width(24.dp)
-                                            .height(4.dp)
+                                            .height(5.dp)
                                             .clip(RoundedCornerShape(2.dp))
                                             .background(if (h.precipProb > 0) accentBlue else Color(0xFF5F6368))
                                     )
                                     Spacer(Modifier.height(4.dp))
-                                    Text("${h.precipProb}%", color = accentBlue, fontSize = 11.sp)
-                                    Text(h.timeLabel, color = Color(0xFF9AA0A6), fontSize = 11.sp)
+                                    Text("${h.precipProb}%", color = accentBlue, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text(h.timeLabel, color = Color(0xFF98A2B3), fontSize = 11.sp)
                                 }
                             }
                         }
@@ -450,24 +557,25 @@ fun WeatherScreen() {
                 }
 
                 item {
-                    val windVal = if (selectedDayIndex == 0) state.currentWind else maxWindToday
+                    val chartHours = dayHours.filterIndexed { i, _ -> i % 3 == 0 }.take(8)
                     ExpandableWeatherCard(
                         icon = Icons.Rounded.Air,
                         title = "Вітер",
-                        summary = "$windVal км/год",
+                        summary = "$displayWind км/год",
                         cardColor = cardDark,
                         initiallyExpanded = false
                     ) {
                         Text(
-                            text = "Найвищий показник у вікні $maxWindToday км/год",
-                            color = Color(0xFFC4C7C5),
-                            fontSize = 13.sp
+                            text = "Максимум за добу: $maxWindToday км/год",
+                            color = Color(0xFFD0D5DD),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
                         )
                         Spacer(Modifier.height(12.dp))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            dayHours.take(7).forEach { h ->
+                            chartHours.forEach { h ->
                                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                                    Text("${h.windSpeed}", color = Color.White, fontSize = 13.sp)
+                                    Text("${h.windSpeed}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     Spacer(Modifier.height(8.dp))
                                     Icon(
                                         imageVector = Icons.Rounded.Navigation,
@@ -478,7 +586,7 @@ fun WeatherScreen() {
                                             .rotate(h.windDir + 180f)
                                     )
                                     Spacer(Modifier.height(8.dp))
-                                    Text(h.timeLabel, color = Color(0xFF9AA0A6), fontSize = 11.sp)
+                                    Text(h.timeLabel, color = Color(0xFF98A2B3), fontSize = 11.sp)
                                 }
                             }
                         }
@@ -486,22 +594,38 @@ fun WeatherScreen() {
                 }
 
                 item {
-                    val humVal = if (selectedDayIndex == 0) state.currentHumidity else (if (dayHours.isNotEmpty()) dayHours.map { it.humidity }.average().roundToInt() else 0)
-                    val avgHum = if (dayHours.isNotEmpty()) dayHours.map { it.humidity }.average().roundToInt() else humVal
+                    val chartHours = dayHours.filterIndexed { i, _ -> i % 3 == 0 }.take(8)
+                    val avgHum = if (dayHours.isNotEmpty()) dayHours.map { it.humidity }.average().roundToInt() else displayHumidity
                     ExpandableWeatherCard(
                         icon = Icons.Rounded.Opacity,
                         title = "Вологість",
-                        summary = "$humVal%",
+                        summary = "$displayHumidity%",
                         cardColor = cardDark,
                         initiallyExpanded = false
                     ) {
-                        Text("У середньому $avgHum%", color = Color(0xFFC4C7C5), fontSize = 13.sp)
+                        Text("У середньому за добу: $avgHum%", color = Color(0xFFD0D5DD), fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         Spacer(Modifier.height(12.dp))
-                        HumidityChart(dayHours.take(7), accentBlue)
+                        HumidityChart(chartHours, accentBlue)
                     }
                 }
 
-                item { Spacer(Modifier.height(24.dp)) }
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Фроггі Погода  $APP_VERSION_LABEL",
+                            color = Color(0xFF98A2B3),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                item { Spacer(Modifier.height(18.dp)) }
             }
         }
     }
@@ -509,7 +633,7 @@ fun WeatherScreen() {
     if (showSearchDialog) {
         AlertDialog(
             onDismissRequest = { showSearchDialog = false },
-            title = { Text("Місто або автогеолокація") },
+            title = { Text("Місто або автогеолокація", fontWeight = FontWeight.Bold) },
             text = {
                 Column {
                     OutlinedTextField(
@@ -529,7 +653,7 @@ fun WeatherScreen() {
                     }) {
                         Icon(Icons.Rounded.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Визначити автоматично (GPS)")
+                        Text("Визначити автоматично (GPS)", fontWeight = FontWeight.Bold)
                     }
                 }
             },
@@ -544,11 +668,11 @@ fun WeatherScreen() {
                             if (found != null) {
                                 coords = found.second to found.third
                                 state = state.copy(cityName = found.first, regionName = found.fourth, isLoading = true)
-                                state = fetchWeather(found.first, found.fourth, found.second, found.third)
+                                loadWeatherAndSyncWidget(found.first, found.fourth, found.second, found.third)
                             }
                         }
                     }
-                }) { Text("Знайти") }
+                }) { Text("Знайти", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
                 TextButton(onClick = { showSearchDialog = false }) { Text("Скасувати") }
@@ -558,189 +682,278 @@ fun WeatherScreen() {
 }
 
 @Composable
-fun FrogDynamicScene(weatherCode: Int, isDay: Boolean) {
+fun FrogDynamicScene(weatherCode: Int, isDay: Boolean, temp: Int, windSpeed: Int) {
     val isRainOrDrizzle = weatherCode in listOf(51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99)
-    val isSnow = weatherCode in listOf(71, 73, 75, 77, 85, 86)
+    val isSnow = weatherCode in listOf(71, 73, 75, 77, 85, 86) || temp <= -1
     val isCloudy = weatherCode in listOf(1, 2, 3, 45, 48) || isRainOrDrizzle || isSnow
+    val isCold = temp in 0..8 || windSpeed >= 18
+    val isSunnyClear = isDay && !isCloudy && !isRainOrDrizzle && !isSnow
 
     val skyColors = when {
-        !isDay && isRainOrDrizzle -> listOf(Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF17202A))
-        !isDay -> listOf(Color(0xFF0D1B2A), Color(0xFF1B263B), Color(0xFF243447))
+        !isDay && isRainOrDrizzle -> listOf(Color(0xFF0B1120), Color(0xFF1E293B), Color(0xFF0F172A))
+        !isDay -> listOf(Color(0xFF091224), Color(0xFF162447), Color(0xFF1F4068))
         isRainOrDrizzle -> listOf(Color(0xFF334155), Color(0xFF475569), Color(0xFF3B4954))
-        isSnow -> listOf(Color(0xFF475569), Color(0xFF64748B), Color(0xFF4B5C6B))
-        isCloudy -> listOf(Color(0xFF3A506B), Color(0xFF5C7AEA).copy(alpha = 0.45f), Color(0xFF3D5A5C))
-        else -> listOf(Color(0xFF2B6CB0), Color(0xFF4A90B8), Color(0xFF4E8D7C))
+        isSnow -> listOf(Color(0xFF475569), Color(0xFF64748B), Color(0xFF526373))
+        isCloudy -> listOf(Color(0xFF3B5998), Color(0xFF5B86E5).copy(alpha = 0.65f), Color(0xFF3D6B66))
+        else -> listOf(Color(0xFF1D70B8), Color(0xFF38A3D1), Color(0xFF4EA885))
     }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(152.dp)
+            .height(176.dp)
             .clip(RoundedCornerShape(18.dp))
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
 
+            // Небо
             drawRect(brush = Brush.verticalGradient(skyColors))
 
+            // День (сонце) або Ніч (місяць і зірки)
             if (!isDay) {
-                // Місяць і зірочки вночі
-                drawCircle(color = Color(0xFFFFF3B0), radius = 18f, center = Offset(w * 0.82f, h * 0.24f))
-                drawCircle(color = Color(0xFF0D1B2A), radius = 15f, center = Offset(w * 0.85f, h * 0.21f))
+                drawCircle(color = Color(0xFFFFF3B0), radius = 21f, center = Offset(w * 0.82f, h * 0.23f))
+                drawCircle(color = Color(0xFF0B1528), radius = 17f, center = Offset(w * 0.85f, h * 0.20f))
                 listOf(
-                    Offset(w * 0.14f, h * 0.20f),
-                    Offset(w * 0.28f, h * 0.14f),
-                    Offset(w * 0.42f, h * 0.25f),
-                    Offset(w * 0.65f, h * 0.17f)
+                    Offset(w * 0.14f, h * 0.18f),
+                    Offset(w * 0.28f, h * 0.13f),
+                    Offset(w * 0.44f, h * 0.22f),
+                    Offset(w * 0.63f, h * 0.15f),
+                    Offset(w * 0.72f, h * 0.28f)
                 ).forEach { star ->
-                    drawCircle(color = Color(0xFFFFF8D6), radius = 2.4f, center = star)
+                    drawCircle(color = Color(0xFFFFF8D6), radius = 2.6f, center = star)
                 }
             } else if (!isRainOrDrizzle && !isSnow) {
-                // Сонце вдень
                 drawCircle(
                     color = Color(0xFFFFD166).copy(alpha = 0.28f),
-                    radius = 34f,
-                    center = Offset(w * 0.83f, h * 0.23f)
+                    radius = 40f,
+                    center = Offset(w * 0.82f, h * 0.23f)
                 )
                 drawCircle(
                     color = Color(0xFFFFCA3A),
-                    radius = 20f,
-                    center = Offset(w * 0.83f, h * 0.23f)
+                    radius = 23f,
+                    center = Offset(w * 0.82f, h * 0.23f)
                 )
             }
 
+            // Хмари
             if (isCloudy) {
-                val cloudColor = if (isDay) Color(0xFFE2E8F0).copy(alpha = 0.85f) else Color(0xFF64748B).copy(alpha = 0.8f)
-                drawCircle(color = cloudColor, radius = 24f, center = Offset(w * 0.22f, h * 0.26f))
-                drawCircle(color = cloudColor, radius = 28f, center = Offset(w * 0.28f, h * 0.23f))
-                drawCircle(color = cloudColor, radius = 20f, center = Offset(w * 0.34f, h * 0.28f))
+                val cloudColor = if (isDay) Color(0xFFE2E8F0).copy(alpha = 0.88f) else Color(0xFF64748B).copy(alpha = 0.85f)
+                drawCircle(color = cloudColor, radius = 26f, center = Offset(w * 0.20f, h * 0.24f))
+                drawCircle(color = cloudColor, radius = 32f, center = Offset(w * 0.27f, h * 0.21f))
+                drawCircle(color = cloudColor, radius = 22f, center = Offset(w * 0.34f, h * 0.26f))
             }
 
-            // Пагорби
+            // Пагорби та земля (без жодних грибків)
             drawCircle(
-                color = if (isDay) Color(0xFF3A6B5C) else Color(0xFF1B2E35),
-                radius = w * 0.44f,
-                center = Offset(w * 0.18f, h * 0.96f)
+                color = if (isSnow) Color(0xFF94A3B8) else if (isDay) Color(0xFF3A7D5C) else Color(0xFF1A3636),
+                radius = w * 0.46f,
+                center = Offset(w * 0.20f, h * 1.02f)
             )
             drawCircle(
-                color = if (isDay) Color(0xFF2F5B4E) else Color(0xFF15242A),
-                radius = w * 0.50f,
-                center = Offset(w * 0.80f, h * 0.98f)
+                color = if (isSnow) Color(0xFFCBD5E1) else if (isDay) Color(0xFF2D6A4F) else Color(0xFF142B2B),
+                radius = w * 0.52f,
+                center = Offset(w * 0.80f, h * 1.04f)
             )
-
-            // Земля або сніговий покрив
             drawRect(
-                color = if (isSnow) Color(0xFFCBD5E1) else if (isDay) Color(0xFF23473C) else Color(0xFF111C21),
-                topLeft = Offset(0f, h * 0.78f),
-                size = Size(w, h * 0.22f)
+                color = if (isSnow) Color(0xFFE2E8F0) else if (isDay) Color(0xFF23533E) else Color(0xFF0F2022),
+                topLeft = Offset(0f, h * 0.80f),
+                size = Size(w, h * 0.20f)
             )
 
-            // Грибочок-будиночок
-            val houseCenterX = w * 0.56f
-            val stemWidth = w * 0.20f
-            val stemHeight = h * 0.32f
-            val stemTop = h * 0.47f
+            // Жабка по центру
+            val frogX = w * 0.50f
+            val frogY = h * 0.67f
 
-            drawRoundRect(
-                color = Color(0xFFEDE4D3),
-                topLeft = Offset(houseCenterX - stemWidth / 2f, stemTop),
-                size = Size(stemWidth, stemHeight),
-                cornerRadius = CornerRadius(18f, 18f)
+            // Лапки жабки
+            drawOval(
+                color = Color(0xFF52B788),
+                topLeft = Offset(frogX - 38f, frogY + 14f),
+                size = Size(24f, 13f)
+            )
+            drawOval(
+                color = Color(0xFF52B788),
+                topLeft = Offset(frogX + 14f, frogY + 14f),
+                size = Size(24f, 13f)
             )
 
-            // Віконце світиться яскравіше вночі або в негоду
-            val windowColor = if (!isDay || isRainOrDrizzle || isSnow) Color(0xFFFFD166) else Color(0xFFFFF3B0)
-            drawRoundRect(
-                color = windowColor,
-                topLeft = Offset(houseCenterX - stemWidth * 0.26f, stemTop + stemHeight * 0.22f),
-                size = Size(stemWidth * 0.52f, stemHeight * 0.48f),
-                cornerRadius = CornerRadius(12f, 12f)
-            )
-
-            drawArc(
-                color = Color(0xFFE06D53),
-                startAngle = 180f,
-                sweepAngle = 180f,
-                useCenter = true,
-                topLeft = Offset(houseCenterX - stemWidth * 0.85f, stemTop - stemWidth * 0.65f),
-                size = Size(stemWidth * 1.7f, stemWidth * 1.25f)
-            )
-            drawCircle(color = Color(0xFFFFF6E5), radius = 7f, center = Offset(houseCenterX - 20f, stemTop - 24f))
-            drawCircle(color = Color(0xFFFFF6E5), radius = 9f, center = Offset(houseCenterX + 4f, stemTop - 35f))
-            drawCircle(color = Color(0xFFFFF6E5), radius = 6f, center = Offset(houseCenterX + 24f, stemTop - 20f))
-
-            // Жабеня Фроггі адаптується до погоди: парасолька в дощ, шарфик у сніг
-            val frogX = w * 0.36f
-            val frogY = h * 0.72f
+            // Тулуб жабки
             drawOval(
                 color = Color(0xFF74C67A),
-                topLeft = Offset(frogX - 22f, frogY - 15f),
-                size = Size(44f, 30f)
+                topLeft = Offset(frogX - 28f, frogY - 8f),
+                size = Size(56f, 36f)
             )
-            // Щічки
-            drawCircle(color = Color(0xFFF4978E).copy(alpha = 0.8f), radius = 4f, center = Offset(frogX - 11f, frogY - 1f))
-            drawCircle(color = Color(0xFFF4978E).copy(alpha = 0.8f), radius = 4f, center = Offset(frogX + 11f, frogY - 1f))
 
-            // Очі
-            drawCircle(color = Color(0xFF74C67A), radius = 8f, center = Offset(frogX - 11f, frogY - 18f))
-            drawCircle(color = Color(0xFF74C67A), radius = 8f, center = Offset(frogX + 11f, frogY - 18f))
-            drawCircle(color = Color.White, radius = 5f, center = Offset(frogX - 11f, frogY - 18f))
-            drawCircle(color = Color.White, radius = 5f, center = Offset(frogX + 11f, frogY - 18f))
-            drawCircle(color = Color(0xFF14181A), radius = 2.6f, center = Offset(frogX - 10.5f, frogY - 18f))
-            drawCircle(color = Color(0xFF14181A), radius = 2.6f, center = Offset(frogX + 11.5f, frogY - 18f))
-
-            if (isSnow) {
-                // Теплий шарфик у сніг
-                drawRoundRect(
-                    color = Color(0xFFE63946),
-                    topLeft = Offset(frogX - 18f, frogY + 6f),
-                    size = Size(36f, 7f),
-                    cornerRadius = CornerRadius(6f, 6f)
-                )
-            }
-
-            if (isRainOrDrizzle) {
-                // Парасолька над жабеням у дощ
-                drawArc(
-                    color = Color(0xFFF4A261),
-                    startAngle = 180f,
-                    sweepAngle = 180f,
-                    useCenter = true,
-                    topLeft = Offset(frogX - 32f, frogY - 46f),
-                    size = Size(64f, 34f)
-                )
-                drawLine(
-                    color = Color(0xFFE2E8F0),
-                    start = Offset(frogX, frogY - 29f),
-                    end = Offset(frogX, frogY - 12f),
-                    strokeWidth = 3f
-                )
-                // Краплинки дощу
-                listOf(
-                    Offset(w * 0.15f, h * 0.42f),
-                    Offset(w * 0.25f, h * 0.58f),
-                    Offset(w * 0.72f, h * 0.36f),
-                    Offset(w * 0.85f, h * 0.52f)
-                ).forEach { drop ->
+            // Одяг залежно від погоди
+            when {
+                isRainOrDrizzle -> {
+                    // Жовтий дощовик
+                    drawRoundRect(
+                        color = Color(0xFFFFB703),
+                        topLeft = Offset(frogX - 27f, frogY - 2f),
+                        size = Size(54f, 27f),
+                        cornerRadius = CornerRadius(14f, 14f)
+                    )
                     drawLine(
-                        color = Color(0xFF8AB4F8),
-                        start = drop,
-                        end = Offset(drop.x - 4f, drop.y + 12f),
-                        strokeWidth = 2.5f
+                        color = Color(0xFFFB8500),
+                        start = Offset(frogX, frogY - 1f),
+                        end = Offset(frogX, frogY + 24f),
+                        strokeWidth = 3f
+                    )
+                }
+                isSnow -> {
+                    // Теплий зимовий светр і червоний шарф
+                    drawRoundRect(
+                        color = Color(0xFF3A86FF),
+                        topLeft = Offset(frogX - 27f, frogY - 2f),
+                        size = Size(54f, 27f),
+                        cornerRadius = CornerRadius(14f, 14f)
+                    )
+                    drawRoundRect(
+                        color = Color(0xFFE63946),
+                        topLeft = Offset(frogX - 25f, frogY - 7f),
+                        size = Size(50f, 10f),
+                        cornerRadius = CornerRadius(6f, 6f)
+                    )
+                    drawRoundRect(
+                        color = Color(0xFFE63946),
+                        topLeft = Offset(frogX + 9f, frogY - 2f),
+                        size = Size(10f, 22f),
+                        cornerRadius = CornerRadius(4f, 4f)
+                    )
+                }
+                isCold -> {
+                    // Теплий светр і шарфик у вітер/прохолоду
+                    drawRoundRect(
+                        color = Color(0xFFE07A5F),
+                        topLeft = Offset(frogX - 27f, frogY - 2f),
+                        size = Size(54f, 27f),
+                        cornerRadius = CornerRadius(14f, 14f)
+                    )
+                    drawRoundRect(
+                        color = Color(0xFFF2CC8F),
+                        topLeft = Offset(frogX - 24f, frogY - 6f),
+                        size = Size(48f, 8f),
+                        cornerRadius = CornerRadius(5f, 5f)
+                    )
+                }
+                else -> {
+                    // Світлий животик у теплу погоду
+                    drawOval(
+                        color = Color(0xFFB7E4C7),
+                        topLeft = Offset(frogX - 18f, frogY + 1f),
+                        size = Size(36f, 22f)
                     )
                 }
             }
 
+            // Голова та очі жабки
+            drawOval(
+                color = Color(0xFF74C67A),
+                topLeft = Offset(frogX - 26f, frogY - 26f),
+                size = Size(52f, 28f)
+            )
+            drawCircle(color = Color(0xFFF4978E).copy(alpha = 0.85f), radius = 4.5f, center = Offset(frogX - 15f, frogY - 10f))
+            drawCircle(color = Color(0xFFF4978E).copy(alpha = 0.85f), radius = 4.5f, center = Offset(frogX + 15f, frogY - 10f))
+
+            drawCircle(color = Color(0xFF74C67A), radius = 9.5f, center = Offset(frogX - 13f, frogY - 27f))
+            drawCircle(color = Color(0xFF74C67A), radius = 9.5f, center = Offset(frogX + 13f, frogY - 27f))
+            drawCircle(color = Color.White, radius = 6f, center = Offset(frogX - 13f, frogY - 27f))
+            drawCircle(color = Color.White, radius = 6f, center = Offset(frogX + 13f, frogY - 27f))
+            drawCircle(color = Color(0xFF14181A), radius = 3f, center = Offset(frogX - 12f, frogY - 27f))
+            drawCircle(color = Color(0xFF14181A), radius = 3f, center = Offset(frogX + 14f, frogY - 27f))
+
+            // Посмішка
+            drawArc(
+                color = Color(0xFF1B4332),
+                startAngle = 15f,
+                sweepAngle = 150f,
+                useCenter = false,
+                topLeft = Offset(frogX - 10f, frogY - 16f),
+                size = Size(20f, 10f),
+                style = Stroke(width = 2.6f, cap = StrokeCap.Round)
+            )
+
+            // Головний убір / аксесуари під погоду
             if (isSnow) {
-                // Сніжинки
+                // В'язана шапочка з помпоном
+                drawArc(
+                    color = Color(0xFFE63946),
+                    startAngle = 180f,
+                    sweepAngle = 180f,
+                    useCenter = true,
+                    topLeft = Offset(frogX - 16f, frogY - 46f),
+                    size = Size(32f, 22f)
+                )
+                drawCircle(color = Color.White, radius = 5f, center = Offset(frogX, frogY - 48f))
+            } else if (isSunnyClear) {
+                // Сонцезахисні окуляри у ясну сонячну погоду
+                drawRoundRect(
+                    color = Color(0xFF111827),
+                    topLeft = Offset(frogX - 21f, frogY - 32f),
+                    size = Size(16f, 10f),
+                    cornerRadius = CornerRadius(3f, 3f)
+                )
+                drawRoundRect(
+                    color = Color(0xFF111827),
+                    topLeft = Offset(frogX + 5f, frogY - 32f),
+                    size = Size(16f, 10f),
+                    cornerRadius = CornerRadius(3f, 3f)
+                )
+                drawLine(
+                    color = Color(0xFF111827),
+                    start = Offset(frogX - 5f, frogY - 28f),
+                    end = Offset(frogX + 5f, frogY - 28f),
+                    strokeWidth = 3f
+                )
+            }
+
+            // Парасолька і краплі дощу
+            if (isRainOrDrizzle) {
+                drawArc(
+                    color = Color(0xFFEF476F),
+                    startAngle = 180f,
+                    sweepAngle = 180f,
+                    useCenter = true,
+                    topLeft = Offset(frogX - 42f, frogY - 68f),
+                    size = Size(84f, 42f)
+                )
+                drawLine(
+                    color = Color(0xFFE2E8F0),
+                    start = Offset(frogX, frogY - 47f),
+                    end = Offset(frogX, frogY - 16f),
+                    strokeWidth = 3.2f
+                )
                 listOf(
-                    Offset(w * 0.16f, h * 0.32f),
-                    Offset(w * 0.30f, h * 0.45f),
-                    Offset(w * 0.68f, h * 0.28f),
-                    Offset(w * 0.84f, h * 0.46f)
+                    Offset(w * 0.14f, h * 0.34f),
+                    Offset(w * 0.24f, h * 0.56f),
+                    Offset(w * 0.33f, h * 0.42f),
+                    Offset(w * 0.68f, h * 0.36f),
+                    Offset(w * 0.78f, h * 0.58f),
+                    Offset(w * 0.87f, h * 0.40f)
+                ).forEach { drop ->
+                    drawLine(
+                        color = Color(0xFF90CDF4),
+                        start = drop,
+                        end = Offset(drop.x - 5f, drop.y + 14f),
+                        strokeWidth = 2.8f,
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+
+            // Сніжинки навколо
+            if (isSnow) {
+                listOf(
+                    Offset(w * 0.15f, h * 0.28f),
+                    Offset(w * 0.26f, h * 0.50f),
+                    Offset(w * 0.36f, h * 0.34f),
+                    Offset(w * 0.65f, h * 0.30f),
+                    Offset(w * 0.76f, h * 0.52f),
+                    Offset(w * 0.86f, h * 0.36f)
                 ).forEach { flake ->
-                    drawCircle(color = Color.White, radius = 4f, center = flake)
+                    drawCircle(color = Color.White, radius = 4.2f, center = flake)
                 }
             }
         }
@@ -774,22 +987,22 @@ fun ExpandableWeatherCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(34.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
                         .background(Color(0xFF34373D)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(icon, contentDescription = null, tint = Color(0xFFA8C7FA), modifier = Modifier.size(18.dp))
+                    Icon(icon, contentDescription = null, tint = Color(0xFFA8C7FA), modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(12.dp))
-                Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                Text(title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(10.dp))
-                Text(summary, color = Color(0xFFC4C7C5), fontSize = 15.sp)
+                Text(summary, color = Color(0xFFE4E7EC), fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             Icon(
                 imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                 contentDescription = null,
-                tint = Color(0xFFC4C7C5)
+                tint = Color(0xFFD0D5DD)
             )
         }
         AnimatedVisibility(visible = expanded) {
@@ -807,7 +1020,7 @@ fun HumidityChart(hours: List<HourlyItem>, accentColor: Color) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             hours.forEach { h ->
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Text("${h.humidity}%", color = Color.White, fontSize = 12.sp)
+                    Text("${h.humidity}%", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -847,7 +1060,7 @@ fun HumidityChart(hours: List<HourlyItem>, accentColor: Color) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             hours.forEach { h ->
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Text(h.timeLabel, color = Color(0xFF9AA0A6), fontSize = 11.sp)
+                    Text(h.timeLabel, color = Color(0xFF98A2B3), fontSize = 11.sp)
                 }
             }
         }
@@ -921,7 +1134,6 @@ suspend fun resolvePlaceName(context: Context, lat: Double, lon: Double): Pair<S
     }
 
     try {
-        val url = "https://geocoding-api.open-meteo.com/v1/search?name=&count=1&language=uk&format=json"
         val revUrl = "https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=$lat&longitude=$lon&localityLanguage=uk"
         val json = JSONObject(URL(revUrl).readText())
         val city = json.optString("city").ifBlank { json.optString("locality") }.ifBlank { "Поточне місце" }
@@ -982,15 +1194,20 @@ suspend fun fetchWeather(city: String, region: String, lat: Double, lon: Double)
         val dirs = hourlyObj.getJSONArray("wind_direction_10m")
         val hums = hourlyObj.getJSONArray("relative_humidity_2m")
 
+        val nowDateStr = LocalDate.now().toString()
         val nowHour = LocalDateTime.now().hour
         val hourlyList = mutableListOf<HourlyItem>()
-        for (i in nowHour until times.length()) {
+        for (i in 0 until times.length()) {
             val rawTime = times.getString(i)
+            val datePart = rawTime.substringBefore("T")
             val hourStr = rawTime.substringAfter("T")
-            val label = if (i == nowHour) "Зараз" else hourStr
+            val hourInt = hourStr.substringBefore(":").toIntOrNull() ?: 0
+            val isCur = (datePart == nowDateStr && hourInt == nowHour)
             hourlyList.add(
                 HourlyItem(
-                    timeLabel = label,
+                    dateStr = datePart,
+                    hourInt = hourInt,
+                    timeLabel = hourStr,
                     temp = temps.getDouble(i).roundToInt(),
                     apparentTemp = feelsArr.getDouble(i).roundToInt(),
                     weatherCode = codesArr.getInt(i),
@@ -999,7 +1216,8 @@ suspend fun fetchWeather(city: String, region: String, lat: Double, lon: Double)
                     precipMm = mms.optDouble(i, 0.0),
                     windSpeed = winds.getDouble(i).roundToInt(),
                     windDir = dirs.getDouble(i).toFloat(),
-                    humidity = hums.getInt(i)
+                    humidity = hums.getInt(i),
+                    isCurrentHour = isCur
                 )
             )
         }
@@ -1014,10 +1232,12 @@ suspend fun fetchWeather(city: String, region: String, lat: Double, lon: Double)
 
         val dailyList = mutableListOf<DailyItem>()
         for (i in 0 until dTimes.length()) {
-            val date = LocalDate.parse(dTimes.getString(i))
+            val rawDate = dTimes.getString(i)
+            val date = LocalDate.parse(rawDate)
             val dayShort = date.dayOfWeek.getDisplayName(TextStyle.SHORT, ukLocale).lowercase()
             dailyList.add(
                 DailyItem(
+                    dateStr = rawDate,
                     dayName = dayShort,
                     maxTemp = dMax.getDouble(i).roundToInt(),
                     minTemp = dMin.getDouble(i).roundToInt(),
