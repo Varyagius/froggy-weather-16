@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Сонечко у верхньому правому куті -->
+    <path
+        android:fillColor="#FFD166"
+        android:pathData="M78,28 A10,10 0 1,1 77.9,28 Z" />
+    <!-- Капелюшок мухомора-будиночка -->
+    <path
+        android:fillColor="#E06D53"
+        android:pathData="M28,54 A26,22 0 0,1 80,54 Z" />
+    <path
+        android:fillColor="#FFF6E5"
+        android:pathData="M40,42 A4,4 0 1,1 39.9,42 Z" />
+    <path
+        android:fillColor="#FFF6E5"
+        android:pathData="M56,37 A5,5 0 1,1 55.9,37 Z" />
+    <path
+        android:fillColor="#FFF6E5"
+        android:pathData="M68,45 A3.5,3.5 0 1,1 67.9,45 Z" />
+    <!-- Жабеня Фроггі -->
+    <path
+        android:fillColor="#74C67A"
+        android:pathData="M34,68 C34,56 74,56 74,68 C74,77 64,80 54,80 C44,80 34,77 34,68 Z" />
+    <!-- Щоки жабеняти -->
+    <path
+        android:fillColor="#F4978E"
+        android:pathData="M41,68 A3.2,2.2 0 1,1 40.9,68 Z" />
+    <path
+        android:fillColor="#F4978E"
+        android:pathData="M67,68 A3.2,2.2 0 1,1 66.9,68 Z" />
+    <!-- Очі жабеняти -->
+    <path
+        android:fillColor="#74C67A"
+        android:pathData="M43,53 A7,7 0 1,1 42.9,53 Z" />
+    <path
+        android:fillColor="#74C67A"
+        android:pathData="M65,53 A7,7 0 1,1 64.9,53 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M43,53 A4.3,4.3 0 1,1 42.9,53 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M65,53 A4.3,4.3 0 1,1 64.9,53 Z" />
+    <path
+        android:fillColor="#14181A"
+        android:pathData="M43.5,53 A2.2,2.2 0 1,1 43.4,53 Z" />
+    <path
+        android:fillColor="#14181A"
+        android:pathData="M64.5,53 A2.2,2.2 0 1,1 64.4,53 Z" />
+    <!-- Усмішка -->
+    <path
+        android:strokeColor="#1B4332"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M48,70 Q54,74 60,70" />
+</vector>
