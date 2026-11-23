@@ -436,7 +436,15 @@ fun WeatherCodeIcon(code: Int, size: Int) {
     }
     Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(size.dp))
 }
-
+fun weatherDescription(code: Int): String = when (code) {
+    0 -> "Ясно"
+    1, 2 -> "Мінлива хмарність"
+    3 -> "Хмарно"
+    45, 48 -> "Туман"
+    in 51..67, in 80..82 -> "Дощ"
+    in 71..77, in 85..86 -> "Сніг"
+    else -> "Гроза"
+}
 suspend fun geocodeCity(query: String): Triple<String, Double, Double>? = withContext(Dispatchers.IO) {
     try {
         val url = "https://geocoding-api.open-meteo.com/v1/search?name=${java.net.URLEncoder.encode(query, "UTF-8")}&count=1&language=uk&format=json"
