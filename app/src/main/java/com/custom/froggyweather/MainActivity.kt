@@ -419,25 +419,22 @@ fun HumidityChart(hours: List<HourlyItem>, accentColor: Color) {
 
 @Composable
 fun WeatherCodeIcon(code: Int, size: Int) {
-    val (icon, tint) = when (code) {
-        0 -> Icons.Rounded.WbSunny to Color(0xFFFDD663)
-        1, 2 -> Icons.Rounded.PartlyCloudyDay to Color(0xFFFDD663)
-        3, 45, 48 -> Icons.Rounded.Cloud to Color(0xFFBDC1C6)
-        in 51..67, in 80..82 -> Icons.Rounded.Grain to Color(0xFF8AB4F8)
-        in 71..77, in 85..86 -> Icons.Rounded.AcUnit to Color(0xFFD2E3FC)
-        else -> Icons.Rounded.Thunderstorm to Color(0xFFF28B82)
+    val icon = when (code) {
+        0 -> Icons.Rounded.WbSunny
+        1, 2 -> Icons.Rounded.WbCloudy
+        3, 45, 48 -> Icons.Rounded.Cloud
+        in 51..67, in 80..82 -> Icons.Rounded.Grain
+        in 71..77, in 85..86 -> Icons.Rounded.AcUnit
+        else -> Icons.Rounded.Thunderstorm
+    }
+    val tint = when (code) {
+        0, 1, 2 -> Color(0xFFFDD663)
+        3, 45, 48 -> Color(0xFFBDC1C6)
+        in 51..67, in 80..82 -> Color(0xFF8AB4F8)
+        in 71..77, in 85..86 -> Color(0xFFD2E3FC)
+        else -> Color(0xFFF28B82)
     }
     Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(size.dp))
-}
-
-fun weatherDescription(code: Int): String = when (code) {
-    0 -> "Ясно"
-    1, 2 -> "Мінлива хмарність"
-    3 -> "Хмарно"
-    45, 48 -> "Туман"
-    in 51..67, in 80..82 -> "Дощ"
-    in 71..77, in 85..86 -> "Сніг"
-    else -> "Гроза"
 }
 
 suspend fun geocodeCity(query: String): Triple<String, Double, Double>? = withContext(Dispatchers.IO) {
