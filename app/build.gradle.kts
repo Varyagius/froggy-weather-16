@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -12,8 +12,8 @@ android {
         applicationId = "com.custom.froggyweather"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.4.0 (v5)"
+        versionCode = 7
+        versionName = "1.6.0 (v7)"
     }
 
     buildTypes {
