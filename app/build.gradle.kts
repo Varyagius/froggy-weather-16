@@ -12,7 +12,7 @@ android {
         applicationId = "com.custom.froggyweather"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
+        versionCode = 6
         versionName = "1.4.0 (v5)"
     }
 
@@ -44,4 +44,5 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }
+
 
